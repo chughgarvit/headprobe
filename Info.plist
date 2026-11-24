@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Merged by xtool into the generated Info.plist. -->
+    <key>NSMotionUsageDescription</key>
+    <string>HeadProbe reads head movement from your earbuds to measure how you turn toward sounds.</string>
+    <!-- Session folders appear in the Files app under On My iPhone > HeadProbe. -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+    <key>UIRequiresFullScreen</key>
+    <true/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+</dict>
+</plist>

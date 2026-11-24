@@ -1,0 +1,17 @@
+# Participant data never goes in git.
+sessions/
+data/
+*_scored.csv
+
+# Build output
+.build/
+xtool/
+*.ipa
+.swiftpm/
+.bsp/
+HeadProbe.xcodeproj/
+Generated/
+xcuserdata/
+DerivedData/
+__pycache__/
+.DS_Store

@@ -15,3 +15,11 @@ xcuserdata/
 DerivedData/
 __pycache__/
 .DS_Store
+
+# LaTeX build output
+paper/*.aux
+paper/*.log
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/main.pdf

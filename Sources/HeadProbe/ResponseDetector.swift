@@ -34,8 +34,9 @@ enum ResponseDetector {
         let post = samples.filter { $0.t > onset && $0.t <= onset + window }
         r.samples = post.count
         guard !base.isEmpty, post.count >= 3 else { r.noData = true; return r }
-        // Earbud dropouts: any gap longer than maxGap from onset to window end makes the probe unscorable.
-        let edges = [onset] + post.map { $0.t } + [min(onset + window, samples.last?.t ?? onset)]
+        // Earbud dropouts: any gap longer than maxGap from onset to window end makes the probe
+        // unscorable, including a stream that stops mid-window (otherwise that would count as a miss).
+        let edges = [onset] + post.map { $0.t } + [onset + window]
         if zip(edges, edges.dropFirst()).map({ $1 - $0 }).max() ?? 0 > maxGap { r.noData = true; return r }
 
         let b = median(base)

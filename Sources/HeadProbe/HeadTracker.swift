@@ -3,6 +3,8 @@ import Foundation
 
 struct HeadSample {
     let t: Double          // seconds since boot (CMDeviceMotion.timestamp)
+    let recv: Double       // Clock.now() when the sample reached the app: recv - t shows what
+                           // the timestamp means (sensor time vs arrival time) and how it jitters
     let yaw: Double        // radians, raw from CoreMotion
     let pitch: Double
     let roll: Double
@@ -11,7 +13,7 @@ struct HeadSample {
 }
 
 /// Head orientation from AirPods (Pro, Max, 3rd gen or later) or Beats with head tracking.
-/// Samples arrive at roughly 25 Hz; the motion rate test measures the real rate.
+/// Samples arrive at about 50 Hz (AirPods Pro, iOS 27); the motion rate test measures the real rate.
 final class HeadTracker: NSObject, ObservableObject, CMHeadphoneMotionManagerDelegate {
     private let manager = CMHeadphoneMotionManager()
     private let opQueue = OperationQueue()
@@ -44,7 +46,7 @@ final class HeadTracker: NSObject, ObservableObject, CMHeadphoneMotionManagerDel
         manager.startDeviceMotionUpdates(to: opQueue) { [weak self] motion, _ in
             guard let self, let m = motion else { return }
             let a = m.attitude, q = a.quaternion, r = m.rotationRate
-            let s = HeadSample(t: m.timestamp, yaw: a.yaw, pitch: a.pitch, roll: a.roll,
+            let s = HeadSample(t: m.timestamp, recv: Clock.now(), yaw: a.yaw, pitch: a.pitch, roll: a.roll,
                                qx: q.x, qy: q.y, qz: q.z, qw: q.w, rx: r.x, ry: r.y, rz: r.z)
             self.lock.lock(); self.latest = s; self.lock.unlock()
             self.onSample?(s)

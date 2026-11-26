@@ -51,12 +51,13 @@ Things most likely to need attention:
 1. Control Center: turn **Spatial Audio / Spatialize Stereo off** for HeadProbe.
 2. Head tracking shows "available" and live yaw moves when you turn. Calibrate: Set forward, turn
    right, Confirm right. Turning right must now give positive yaw.
-3. **Motion rate test** (60 s). Note the Hz, jitter and gaps it reports. Expected about 25 Hz.
+3. **Motion rate test** (60 s). Note the Hz, jitter and gaps it reports. Measured 50 Hz on AirPods Pro (2026-11-25).
 4. **Head turn**, 1 minute: sounds come from the left and right as labelled in the live result line
    (a -60° probe must sound left). If left/right are swapped, the sign in
    `ProbeAudio.setDirection` is wrong for this renderer: fix it there.
 5. **Latency sync test**: film the screen at 240 fps with a second phone, an AirPod held to its mic.
-   Frames from flash to click (x 4.17 ms) minus about one display frame = Bluetooth offset. Repeat
+   Frames from flash to click (x 4.17 ms) plus about one display frame = total audio delay
+   (enter it as "Audio delay"; it replaces the reported latency, it is not added to it). Repeat
    10+ clicks; record the mean and SD in `docs/timing.md` (create it).
 6. Get the session folders off the phone (Files app > On My iPhone > HeadProbe > sessions, or
    Finder's file sharing), then:
@@ -67,7 +68,7 @@ Things most likely to need attention:
    Check that `meta.json` clock_mach_s and clock_uptime_s are nearly equal (the scorer assumes motion,
    touch and audio share one clock).
 
-**Decision point:** if the Bluetooth offset varies by more than about 20 ms between clicks, the paper
+**Decision point:** if the audio delay varies by more than about 20 ms between clicks, the paper
 reports misses, lapses and turn accuracy, not fine-grained mean reaction times.
 
 ### 3. Not built yet

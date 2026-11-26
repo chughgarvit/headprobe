@@ -25,6 +25,7 @@ final class CSVFile {
 ///   motion.csv  every head-motion sample (raw, so analysis can re-score everything)
 ///   probes.csv  one row per probe: when and where it played, and the first-pass score
 ///   taps.csv    every screen touch (button-reference mode)
+///   system.csv  memory, CPU, battery, thermal state once a second (SystemMonitor)
 final class SessionLog {
     let folder: URL
     let motion: CSVFile
@@ -39,12 +40,13 @@ final class SessionLog {
         try json.write(to: folder.appendingPathComponent("meta.json"))
 
         motion = try CSVFile(url: folder.appendingPathComponent("motion.csv"), header: [
-            "t", "yaw_rel_deg", "yaw", "pitch", "roll", "qx", "qy", "qz", "qw", "rx", "ry", "rz",
+            "t", "t_recv", "yaw_rel_deg", "yaw", "pitch", "roll", "qx", "qy", "qz", "qw", "rx", "ry", "rz",
         ])
         probes = try CSVFile(url: folder.appendingPathComponent("probes.csv"), header: [
-            "probe", "mode", "azimuth_deg", "scheduled_t", "reported_latency_s", "bt_offset_s", "onset_t",
+            "probe", "mode", "azimuth_deg", "scheduled_t", "reported_latency_s", "audio_delay_s", "onset_t",
             "tap_rt_s", "miss", "no_data", "anticipation", "latency_start_s", "latency_exceed_s",
             "first_side", "correct_side", "endpoint_deg", "error_deg", "peak_vel_dps", "final_yaw_deg", "n_samples",
+            "played_back_t", "score_ms",
         ])
         taps = try CSVFile(url: folder.appendingPathComponent("taps.csv"), header: ["t", "during_probe"])
     }

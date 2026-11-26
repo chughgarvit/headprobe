@@ -61,7 +61,7 @@ final class ProbeAudio {
     }
 
     /// Latency the system reports (I/O buffer plus route). For Bluetooth this is only part of the
-    /// story; the sync test measures the rest, entered as the Bluetooth offset.
+    /// story; the sync test measures the total delay, which then replaces this value.
     var reportedLatency: Double {
         let s = AVAudioSession.sharedInstance()
         return s.outputLatency + s.ioBufferDuration
@@ -81,13 +81,15 @@ final class ProbeAudio {
     }
 
     /// Queue a buffer to start at an absolute host time (mach_absolute_time ticks).
-    func play(_ buffer: AVAudioPCMBuffer, atHostTime host: UInt64) {
-        player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [], completionHandler: nil)
+    /// `playedBack` runs (on an audio thread) when iOS reports the buffer as played out.
+    func play(_ buffer: AVAudioPCMBuffer, atHostTime host: UInt64, playedBack: (() -> Void)? = nil) {
+        player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [],
+                              completionCallbackType: .dataPlayedBack) { _ in playedBack?() }
     }
 
     /// Broadband white noise (good for localisation: HRTF cues need high frequencies) with
     /// 5 ms raised-cosine ramps. Fixed seed, so every probe is the identical sound.
-    static func makeNoiseBurst(format: AVAudioFormat, ms: Double, seed: UInt64) -> AVAudioPCMBuffer {
+    static func makeNoiseBurst(format: AVAudioFormat, ms: Double, seed: UInt64, amplitude: Float = 0.35) -> AVAudioPCMBuffer {
         let n = AVAudioFrameCount(format.sampleRate * ms / 1000)
         let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: n)!
         buf.frameLength = n
@@ -100,7 +102,7 @@ final class ProbeAudio {
             var g = 1.0
             if i < ramp { g = 0.5 - 0.5 * cos(.pi * Double(i) / Double(ramp)) }
             if i >= Int(n) - ramp { g = 0.5 - 0.5 * cos(.pi * Double(Int(n) - 1 - i) / Double(ramp)) }
-            data[i] = Float(0.35 * u * g)
+            data[i] = amplitude * Float(u * g)
         }
         return buf
     }

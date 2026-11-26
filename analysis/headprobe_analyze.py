@@ -2,6 +2,7 @@
 
     python analysis/headprobe_analyze.py sessions/            # every session folder inside
     python analysis/headprobe_analyze.py --selftest           # check the scorer on synthetic turns
+    python analysis/headprobe_analyze.py --system sessions/   # system cost: memory, CPU, battery, timing
 
 The scorer is the same algorithm as Sources/HeadProbe/ResponseDetector.swift, with the same
 constants. This file is the authoritative version: the app's probes.csv scores are first-pass only.
@@ -56,8 +57,9 @@ def score(samples, onset, window, target):
         r["no_data"] = True
         return r
     # Earbud dropouts: a gap longer than MAX_GAP_S anywhere from onset to window end (including
-    # before the first and after the last sample) makes the probe unscorable.
-    edges = [onset] + [p[0] for p in post] + [min(onset + window, samples[-1][0] if samples else onset)]
+    # before the first and after the last sample) makes the probe unscorable. A stream that stops
+    # mid-window, or a recording that ends before the window does, is no_data, never a miss.
+    edges = [onset] + [p[0] for p in post] + [onset + window]
     if max(b - a for a, b in zip(edges, edges[1:])) > MAX_GAP_S:
         r["no_data"] = True
         return r
@@ -91,7 +93,7 @@ def score(samples, onset, window, target):
 
 
 def read_csv(path):
-    with open(path, newline="") as f:
+    with open(path, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
 
@@ -101,7 +103,7 @@ def num(s):
 
 def analyse_session(folder):
     folder = Path(folder)
-    meta = json.loads((folder / "meta.json").read_text())
+    meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
     motion = [(float(r["t"]), float(r["yaw_rel_deg"])) for r in read_csv(folder / "motion.csv")]
     probes = [p for p in read_csv(folder / "probes.csv") if p["mode"] in ("head", "tap")]
     window = float(meta["window_s"])
@@ -141,6 +143,113 @@ def analyse_session(folder):
             signed_error_deg=round(statistics.fmean(errs), 1) if errs else None,
         )
     return summary
+
+
+# ---------------------------------------------------------------- system cost
+
+def pct(xs, q):
+    """Percentile with linear interpolation (q in 0..100)."""
+    xs = sorted(xs)
+    if not xs:
+        return None
+    k = (len(xs) - 1) * q / 100
+    lo, hi = math.floor(k), math.ceil(k)
+    return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
+
+
+def r1(x, d=1):
+    return None if x is None else round(x, d)
+
+
+def system_report(folder):
+    """Resource use and timing of one session, from system.csv, motion.csv, probes.csv."""
+    folder = Path(folder)
+    meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
+    rep = dict(session=folder.name, mode=meta["mode"], hw=meta.get("hw_model"), ios=meta.get("ios"),
+               route=meta.get("audio_route"))
+
+    sysf = folder / "system.csv"
+    if sysf.exists():
+        rows = read_csv(sysf)
+        t = [float(r["t"]) for r in rows]
+        mem = [float(r["mem_mb"]) for r in rows if r["mem_mb"]]
+        cpu = [float(r["cpu_pct"]) for r in rows[1:] if r["cpu_pct"]]   # first row has no interval
+        cpu_total = [float(r["cpu_total_s"]) for r in rows]
+        dur = t[-1] - t[0] if len(t) > 1 else 0
+        bat = [(float(r["t"]), float(r["battery_pct"])) for r in rows if r["battery_pct"]]
+        charging = any(r["charging"] == "1" for r in rows)
+        rep.update(
+            duration_min=r1(dur / 60, 2),
+            mem_median_mb=r1(statistics.median(mem)) if mem else None, mem_peak_mb=r1(max(mem)) if mem else None,
+            cpu_mean_pct=r1(statistics.fmean(cpu), 2) if cpu else None, cpu_p95_pct=r1(pct(cpu, 95), 2),
+            cpu_s_per_min=r1((cpu_total[-1] - cpu_total[0]) / dur * 60, 2) if dur else None,
+            thermal_max=max(int(r["thermal"]) for r in rows), low_power=any(r["low_power"] == "1" for r in rows),
+            charging=charging,
+        )
+        if bat and not charging and dur >= 600:
+            # iOS reports the level in coarse steps: only the slope over 10+ minutes means anything.
+            rep.update(battery_start_pct=bat[0][1], battery_end_pct=bat[-1][1],
+                       battery_drain_pct_per_h=r1((bat[0][1] - bat[-1][1]) / (dur / 3600), 2))
+        else:
+            rep["battery_drain_pct_per_h"] = None
+            rep["battery_note"] = "plugged in" if charging else "run >= 10 min unplugged for a battery figure"
+
+    mrows = read_csv(folder / "motion.csv") if (folder / "motion.csv").exists() else []
+    if len(mrows) > 10:
+        mt = [float(r["t"]) for r in mrows]
+        d = [b - a for a, b in zip(mt, mt[1:])]
+        m = statistics.fmean(d)
+        rep.update(motion_hz=r1(1 / m, 1), motion_interval_ms=r1(1000 * m, 2),
+                   motion_jitter_sd_ms=r1(1000 * statistics.pstdev(d), 2), motion_max_gap_ms=r1(1000 * max(d)),
+                   motion_gaps_over_2x=sum(x > 2 * m for x in d), motion_samples=len(mt))
+        if "t_recv" in mrows[0] and mrows[0]["t_recv"]:
+            delay = [1000 * (float(r["t_recv"]) - float(r["t"])) for r in mrows]
+            rep.update(motion_delivery_median_ms=r1(statistics.median(delay), 2),
+                       motion_delivery_p95_ms=r1(pct(delay, 95), 2), motion_delivery_max_ms=r1(max(delay), 2))
+
+    probes = [p for p in read_csv(folder / "probes.csv") if p["mode"] in ("head", "tap")]         if (folder / "probes.csv").exists() else []
+    if probes:
+        sched = [float(p["scheduled_t"]) for p in probes]
+        isi = [b - a for a, b in zip(sched, sched[1:])]
+        rep.update(probes=len(probes), isi_min_s=r1(min(isi), 3) if isi else None,
+                   isi_max_s=r1(max(isi), 3) if isi else None, isi_mean_s=r1(statistics.fmean(isi), 3) if isi else None,
+                   reported_latency_ms=r1(1000 * float(probes[0]["reported_latency_s"])))
+        burst = float(meta["burst_ms"]) / 1000
+        pb = [1000 * (float(p["played_back_t"]) - float(p["scheduled_t"]) - burst)
+              for p in probes if p.get("played_back_t")]
+        if pb:
+            # Time from the scheduled end of the burst to iOS calling it "played back".
+            rep.update(playback_residual_median_ms=r1(statistics.median(pb), 1),
+                       playback_residual_sd_ms=r1(statistics.pstdev(pb), 1),
+                       playback_residual_range_ms=[r1(min(pb), 1), r1(max(pb), 1)])
+        sc = [float(p["score_ms"]) for p in probes if p.get("score_ms")]
+        if sc:
+            rep.update(score_compute_median_ms=r1(statistics.median(sc), 3), score_compute_max_ms=r1(max(sc), 3))
+
+    size = sum(f.stat().st_size for f in folder.iterdir() if f.is_file())
+    rep["storage_kb"] = r1(size / 1024)
+    if rep.get("duration_min"):
+        rep["storage_kb_per_min"] = r1(size / 1024 / rep["duration_min"])
+    return rep
+
+
+def overhead(reports):
+    """Each session's cost above the idle baseline (app open, screen on, nothing running)."""
+    idle = [r for r in reports if r["mode"] == "idle" and r.get("cpu_mean_pct") is not None]
+    if not idle:
+        return []
+    base = idle[-1]
+    out = []
+    for r in reports:
+        if r["mode"] == "idle" or r.get("cpu_mean_pct") is None:
+            continue
+        o = dict(session=r["session"], mode=r["mode"], vs=base["session"],
+                 extra_cpu_pct=r1(r["cpu_mean_pct"] - base["cpu_mean_pct"], 2),
+                 extra_mem_mb=r1(r["mem_median_mb"] - base["mem_median_mb"]))
+        if r.get("battery_drain_pct_per_h") is not None and base.get("battery_drain_pct_per_h") is not None:
+            o["extra_drain_pct_per_h"] = r1(r["battery_drain_pct_per_h"] - base["battery_drain_pct_per_h"], 2)
+        out.append(o)
+    return out
 
 
 # ---------------------------------------------------------------- self-test
@@ -208,6 +317,9 @@ def selftest():
     r = score([(t, y) for t, y in synthetic_turn(10.0, 0.3, 60, seed=9) if not (10.0 < t < 12.0)], 10.0, 2.5, 60)
     check("dropout = no data", r["no_data"])
 
+    r = score([(t, y) for t, y in synthetic_turn(10.0, 0, 60, miss=True, seed=11) if t < 11.0], 10.0, 2.5, 60)
+    check("stream stops mid-window before any turn = no data, not a miss", r["no_data"])
+
     still = [score(synthetic_turn(10.0, 0, 60, miss=True, noise=1.5, seed=s), 10.0, 2.5, 60)["miss"]
              for s in range(50)]
     check("noisy still head (1.5 deg SD) is never a turn", all(still), f"{sum(still)}/50 misses")
@@ -224,8 +336,19 @@ def main(argv):
     if not argv:
         print(__doc__)
         sys.exit(2)
+    system = "--system" in argv
+    argv = [a for a in argv if a != "--system"]
     root = Path(argv[0])
     folders = [root] if (root / "meta.json").exists() else sorted(p for p in root.iterdir() if (p / "meta.json").exists())
+    if system:
+        reports = [system_report(f) for f in folders]
+        for r in reports:
+            print(json.dumps(r))
+        for o in overhead(reports):
+            print(json.dumps(o))
+        out = (root if not (root / "meta.json").exists() else root.parent) / "system_report.json"
+        out.write_text(json.dumps(dict(sessions=reports, overhead_vs_idle=overhead(reports)), indent=2))
+        return
     for f in folders:
         print(json.dumps(analyse_session(f)))
 

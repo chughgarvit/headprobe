@@ -23,13 +23,13 @@ struct ContentView: View {
                     Picker("Mode", selection: $cfg.mode) {
                         ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
                     }
-                    if cfg.mode == .head || cfg.mode == .tap || cfg.mode == .sync {
+                    if cfg.mode == .head || cfg.mode == .tap || cfg.mode == .sync || cfg.mode == .idle {
                         Stepper(String(format: "Length: %.0f min", cfg.minutes), value: $cfg.minutes, in: 1...30)
                     }
                     if cfg.mode == .head || cfg.mode == .tap {
                         HStack {
-                            Text("Bluetooth offset (ms)")
-                            TextField("0", value: $cfg.btOffsetMs, format: .number)
+                            Text("Audio delay from sync test (ms, 0 = reported)")
+                            TextField("0", value: $cfg.audioDelayMs, format: .number)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
                         }
@@ -98,6 +98,7 @@ struct RunView: View {
         switch mode {
         case .head: return "Whenever you hear a sound, turn your head toward it as quickly as you can, then face forward again."
         case .tap: return "Whenever you hear a sound, tap the screen as quickly as you can."
+        case .idle: return "System baseline: keep the earbuds in and the phone unplugged. Nothing will play. Leave the app open until it ends."
         case .sync: return "Sync test: film this screen in slow motion with an AirPod held to the camera's microphone."
         case .rate: return "Motion rate test: keep the earbuds in and move your head naturally for 60 seconds."
         }

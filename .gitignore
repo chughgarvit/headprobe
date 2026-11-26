@@ -1,0 +1,15 @@
+# Participant data never goes in git.
+sessions/
+data/
+
+# Build output
+.build/
+xtool/
+*.ipa
+.swiftpm/
+.bsp/
+HeadProbe.xcodeproj/
+Generated/
+xcuserdata/
+DerivedData/
+.DS_Store
